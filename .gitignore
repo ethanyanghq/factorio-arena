@@ -1,0 +1,44 @@
+# Python / uv
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.pyrefly/
+.mypy_cache/
+
+# secrets and local config
+.env
+.env.*
+!.env.example
+.envrc
+docker/config/rconpw
+docker/config/server-settings.json
+
+# Factorio server data (bind-mounted volumes) and downloaded mods
+docker/data/
+factorio/
+*.zip
+
+# generated editor typedefs (make typedefs)
+.luals/
+
+# experiment tracking and outputs
+wandb/
+weave/
+outputs/
+eval_results/
+runs/
+checkpoints/
+*.safetensors
+*.pt
+*.ckpt
+
+# macOS / editors
+.DS_Store
+.idea/
+.vscode/
+.zed/
