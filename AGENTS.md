@@ -6,11 +6,11 @@ Guidelines for writing code in this repository. They apply to every language and
 
 ## Project Commands
 
-Fill these in for each repository. Run them before every commit.
+Run them before every commit. `make check` runs the full pre-commit hook set; `make setup` installs dependencies and hooks.
 
-- **Test:** `<command>`
-- **Lint:** `<command>`
-- **Format:** `<command>`
+- **Test:** `make test`
+- **Lint:** `make lint`
+- **Format:** `make format`
 
 ## Agent Workflow
 
