@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime.version": "Lua 5.2",
+  "runtime.plugin": ".luals/factorio/plugin.lua",
+  "runtime.builtin": { "io": "disable", "os": "disable", "coroutine": "disable" },
+  "workspace.library": [".luals/factorio/library"],
+  "workspace.checkThirdParty": false,
+  "diagnostics.disable": ["lowercase-global"]
+}
