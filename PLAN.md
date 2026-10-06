@@ -34,7 +34,7 @@ A good environment is therefore judged on the quality of its *tasks* and *reward
 
 ### 2.2 How training uses the environment (GRPO in one paragraph)
 
-The training loop you'll run (GRPO or a close relative, via `prime-rl` or `vf.RLTrainer`) works like this. Take one task. Sample the model on it *G* times (say 8) with temperature, producing 8 full episodes. Score each with the reward function. Within the group, compute each episode's advantage: how much better or worse it scored than the group average. Then nudge the model's weights so the tokens it produced in above-average episodes become more likely, and tokens in below-average episodes less likely. Repeat across many tasks.
+The training loop you'll run (GRPO or a close relative, via `prime-rl`) works like this. Take one task. Sample the model on it *G* times (say 8) with temperature, producing 8 full episodes. Score each with the reward function. Within the group, compute each episode's advantage: how much better or worse it scored than the group average. Then nudge the model's weights so the tokens it produced in above-average episodes become more likely, and tokens in below-average episodes less likely. Repeat across many tasks.
 
 Three consequences for environment design fall out of this:
 
@@ -64,13 +64,13 @@ The action space is human-shaped either way, so the pixel mode can be added late
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Trainer / Evaluator  (prime-rl, vf.RLTrainer, or vf-eval)       │
+│  Trainer / Evaluator  (prime-rl or vf-eval)                      │
 │  - samples model, collects episodes, computes rewards            │
 └───────────────┬──────────────────────────────────────────────────┘
-                │ OpenAI-compatible model endpoint (vLLM / API)
+                │ OpenAI-compatible model endpoint (OpenRouter / vLLM)
                 ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  verifiers MultiTurnEnv  (Python package: `factorio_arena`)      │
+│  verifiers v1 Taskset + Env.run  (Python package: `factorio_arena`)│
 │  - loads task YAML, builds system prompt                          │
 │  - parses model output → action batch                            │
 │  - calls game client, formats observation                         │
@@ -103,8 +103,12 @@ The action space is human-shaped either way, so the pixel mode can be added late
 
 - **RCON** is Factorio's remote console: a TCP protocol where you send console commands and get text back. `/sc` (silent command) runs arbitrary Lua. The Lua mod exposes a `remote` interface so the Python side calls named functions rather than injecting raw Lua each step.
 - **Headless** means no renderer, no window. It runs on a cheap CPU box, dozens of copies on one machine.
-- **The character** is a `character` entity controlled by script, not by a connected player. The engine's `LuaControl` interface (shared by players and characters) exposes `walking_state`, `mining_state`, `begin_crafting`, `can_reach_entity`, inventories. This is the fact the whole project rests on; verify it first (section 6, milestone 0).
+- **The character** is a `character` entity controlled by script, not by a connected player. The engine's `LuaControl` interface (shared by players and characters) exposes `walking_state`, `mining_state`, `begin_crafting`, `can_reach_entity`, inventories. This is the fact the whole project rests on; verify it first (section 6, milestone 0). Evidence so far (see `REUSE.md` §4.4): walking on an unattached character is confirmed by forum posts and by the BotBridge mod; mining and crafting are documented but not yet confirmed empirically. If `mining_state` fails, the fallback is `LuaEntity.mine` with a tick cost computed from the prototype's mining time, which keeps the semantics but loses engine-enforced timing.
+- **Framework-free game client.** The Python client (`reset`, `step`) knows nothing about `verifiers`. The `verifiers` adapter is a thin layer over it, so swapping trainers (prime-rl, or TRL as a single-GPU fallback) touches only the adapter.
+- **Versions.** Factorio `2.0.77` (current stable; the `factoriotools/factorio` image) and Python 3.12 (`verifiers` excludes 3.14; `prime-rl` wants 3.12). Factorio 2.x renames that bite mod code: `storage` replaces `global`, directions are 16-way (N/E/S/W = 0/4/8/12), `helpers.table_to_json` replaces `game.table_to_json`.
+- **Time control** uses `game.tick_paused = true` to freeze the world and `game.ticks_to_run = N` to advance exactly N ticks; RCON commands still execute while paused. One `ticks_to_run` call per action, since stepping granularity can change results.
 - **Determinism.** Factorio is fully deterministic given a map seed and an input sequence. An episode is reproducible from `(task, seed, action_list)`. This gives you free replays, free debugging, and free footage: feed the action list to a real client later and record it.
+- **The dev Mac is emulation-only.** There is no arm64 Factorio binary; the server runs under box64 or Rosetta on Apple Silicon. Throughput and cost numbers must come from an x86 Linux box.
 
 ---
 
@@ -116,7 +120,7 @@ A human plays Factorio in real time: the world keeps ticking while you think. An
 
 The environment is therefore **turn-based with a game clock**:
 
-- Between the model's turns, the world is frozen (the server is paused or simply not stepped).
+- Between the model's turns, the world is frozen (`game.tick_paused`; see section 3).
 - Each action has a *tick cost*: walking 10 tiles costs the ticks the character needs to walk them; mining an ore tile costs its mining time; placing is instant; `wait(n)` costs exactly `n`.
 - When an action executes, the mod advances the world by that many ticks. Everything else in the world (furnaces smelting, drills mining, belts moving) runs during those ticks.
 - The episode has a **tick budget** (game time) and a **turn budget** (model calls). They are different resources. A model that waits efficiently spends few turns but many ticks; a model that checks the furnace every 10 ticks spends many turns.
@@ -163,7 +167,7 @@ Design rules:
 - **Resources are summarized**, not enumerated: nearest tile per ore type and a rough patch size. Enumerating ore tiles would cost thousands of tokens and tell the model nothing a human sees at a glance.
 - **Positions are relative to the character.** Humans reason in "three tiles to my right", not world coordinates. Absolute positions can be added if relative ones measurably hurt.
 - **Errors are precise.** `out_of_reach` with the distance, `no_item: stone` with what's in inventory, `blocked_by: stone-furnace at [3,-2]`. In this environment the error string is the primary learning signal for spatial mistakes. Vague errors make the task unlearnable.
-- **Entity status comes from the engine** (`working`, `no_fuel`, `no_ingredients`, `output_full`). It's what a human sees as the icon over the machine.
+- **Entity status comes from the engine.** `LuaEntity.status` yields a `defines.entity_status` value; keep `working`, `no_fuel`, `no_ingredients`, `full_output`, `no_minable_resources`, `waiting_for_source_items`, `waiting_for_space_in_destination`, `no_power`, and collapse the rest to `normal`. It's what a human sees as the icon over the machine. Chests and belts have no status; the field is simply absent for them.
 - **Optional ASCII minimap.** Build it, A/B it. Keep it only if it moves success rate more than it costs in tokens.
 
 ### 5.2 Action space
@@ -175,18 +179,26 @@ The model emits one JSON object per turn: a list of up to ~5 primitives, execute
 | `walk` | `dx, dy` | holding WASD | distance / walk speed | straight line, max ~10 tiles, stops on collision; **no pathfinding** |
 | `mine` | `x, y` | right-click hold | engine mining time | in reach; resource or minable entity present |
 | `place` | `item, x, y, dir` | left-click with item in hand | 0 | in reach; item in inventory; engine `can_place_entity` |
-| `rotate` | `x, y` | R key | 0 | in reach; rotatable |
+| `rotate` | `x, y` | R key | 0 | in reach; `rotatable` |
 | `set_recipe` | `x, y, recipe` | open assembler, pick recipe | 0 | in reach; valid recipe for that machine |
-| `insert` | `x, y, item, n` | ctrl-click into machine | 0 | in reach; item in inventory; slot accepts item |
+| `insert` | `x, y, item, n` | ctrl-click into machine | 0 | in reach; item in inventory; target inventory accepts item |
 | `take` | `x, y, item, n` | ctrl-click out of machine | 0 | in reach; item present |
 | `craft` | `recipe, n` | handcraft from inventory | queued; crafts complete over ticks | ingredients present; recipe handcraftable |
 | `wait` | `ticks` | standing still | `ticks` | capped per call |
+
+Engine details the mod must respect (verified against the 2.1 API; see `REUSE.md` §4.4):
+
+- **Walking.** Collisions raise no event, so the mod detects a stall by position delta each tick. An unattached character keeps walking until `walking_state` is cleared explicitly.
+- **Mining.** Select the target with `update_selected_entity`, then set `mining_state` each tick until the engine reports the mine complete.
+- **Placing.** `create_entity` has no build check in 2.x. Check with `can_place_entity{build_check_type = manual}` first, then create, then remove the item from inventory.
+- **Inventories.** `insert` and `take` address machine inventories by the 2.x defines `crafter_input`, `crafter_output`, `fuel`, `burnt_result`, and `chest`. The 1.x names (`furnace_source` and friends) no longer exist. `get_insertable_count` gives the exact capacity for "inserted N of M" errors.
+- **Reach and speed** come from the base character prototype: reach 10, build distance 10, resource reach 2.7, running speed 0.15 tiles per tick. Confirm these return real values on an unattached character in milestone 0.
 
 What is deliberately **absent**: `walk_to(x, y)` with pathfinding, `connect(a, b)`, `build_blueprint`, teleport, "find nearest X". Each of these is spatial reasoning the model would otherwise have to do itself. The pushback rule for the whole project: when models struggle, **do not add helpers**. If they can't walk around a rock, that's a finding, not a bug.
 
 ### 5.3 Tasks
 
-A task is a YAML file, so tasks are data and the task set can grow without code changes.
+A task is a YAML file, so tasks are data and the task set can grow without code changes. A Pydantic model validates each file at load time and exports a JSON Schema for editor validation. The task set stays finite with unique ids, because the curriculum sampler (section 7.2) tracks per-task reward.
 
 ```yaml
 id: gears-16-empty
@@ -200,7 +212,9 @@ par_ticks: 9800                # from the scripted solver
 tags: [smelting, handcraft, tier-1]
 ```
 
-**The task ladder** reuses FLE's lab-play targets so the comparison is direct. Roughly, in increasing difficulty:
+**The lab map** is a scenario whose surface is built in Lua (all autoplace off, lab tiles, frozen daytime, ore patches placed at seeded offsets), so `reset` rebuilds the surface in place rather than restarting a container.
+
+**The task ladder** reuses FLE's lab-play targets so the comparison is direct. One caveat for the writeup: FLE lab-play scores throughput per minute, while this ladder scores "have N items by episode end". The targets match; the metric does not. Either say so plainly or add a throughput variant. Roughly, in increasing difficulty:
 
 1. Mine 10 iron ore (walk, mine)
 2. Craft 5 gears from 10 plates in inventory (craft only)
@@ -229,7 +243,7 @@ So a success is worth at least 0.5, and matching par is worth 1.0. Beating par c
 
 **Why binary success, not partial credit.** Partial credit ("you smelted some plates, here's 0.3") is tempting because it gives gradient on tasks the model can't finish. It also teaches the model to *collect partial credit* rather than finish. The honest fix for "no gradient on hard tasks" is the curriculum: give the model an easier task it *can* finish, not a consolation prize on the hard one.
 
-**Monitor metrics are not reward.** Log everything (ore mined, furnace placed, plates smelted, invalid-action count, ticks spent walking vs waiting) as diagnostics. They tell you *why* a task is failing and make excellent writeup material. They never enter the number the trainer sees.
+**Monitor metrics are not reward.** Log everything (ore mined, furnace placed, plates smelted, invalid-action count, ticks spent walking vs waiting) as diagnostics. They tell you *why* a task is failing and make excellent writeup material. They never enter the number the trainer sees. Failure-taxonomy labels (section 6, milestone 4) are also metrics, attached with `@vf.metric`; `vf-replay` can re-score saved traces offline without a game server, so labels can be refined after the fact.
 
 **Reward-hack audit, before any training run.** Ask: what is the cheapest way to make the success condition true?
 
@@ -257,13 +271,25 @@ No timeline. Each milestone ends with something demonstrable, and the order is c
 
 ### Milestone 0 — Retire the existential risk
 
-Before anything else: headless server in Docker, RCON hello-world from Python, and **confirm that a script-controlled `character` entity can walk, mine, and craft with no client connected.** If this works, the rest of the design stands. If it doesn't, the design changes (the fallback is a connected bot client, which is much heavier), and it's better to know now than after writing the mod.
+Before anything else: **confirm that a script-controlled `character` entity can walk, mine, and craft with no client connected.** If this works, the rest of the design stands. If mining fails, use the `LuaEntity.mine` fallback (section 3); if walking fails, the design changes (a connected bot client, which is much heavier), and it's better to know now than after writing the mod.
 
-Also at this stage: crank `game.speed`, measure ticks-per-second on a lab map, and note how many servers one CPU core can run. These numbers drive the cost model later.
+Checklist:
+
+- [ ] Headless server starts in Docker on the Mac (box64 or Rosetta) with `auto_pause: false`; RCON hello-world from Python.
+- [ ] Unattached character walks, stops when told, and stalls on collision.
+- [ ] Unattached character mines via `mining_state` (or the fallback).
+- [ ] Unattached character crafts via `begin_crafting`; `crafting_queue` advances with ticks.
+- [ ] Reach attributes return real values on the unattached character.
+- [ ] `tick_paused` + `ticks_to_run` step the world exactly N ticks.
+- [ ] An observation over 8 KB round-trips over RCON intact.
+- [ ] `factorio --dump-data` produces a versioned `game_data.json` (recipes, mining times, crafting speeds, character fields); commit it.
+- [ ] Ticks per second at cranked `game.speed`, servers per core, and a determinism checksum of the same `(seed, action_list)` on the Mac versus an x86 box. These numbers drive the cost model later.
 
 ### Milestone 1 — The "hands" mod
 
 The Lua mod implementing the primitives in section 5.2, a `remote` interface (`reset`, `step`, `observe`), human-constraint enforcement, tick advancement, and JSON observation serialization. A Python client that wraps RCON with `reset(task) → obs` and `step(actions) → obs`.
+
+Lua unit tests run inside the headless server with FactorioTest. The Python client writes one JSONL line per step (`tick`, `action`, `result`, `observation`); because the game is deterministic, that file is the replay and the main debugging tool until a renderer exists.
 
 Exit criteria: every primitive has a test that exercises its success path and each of its error paths; error strings are precise; observations are deterministic across runs with the same seed and actions.
 
@@ -271,11 +297,13 @@ Exit criteria: every primitive has a test that exercises its success path and ea
 
 For every task in the ladder, a hand-written Python policy that solves it through the same client (no shortcuts through the mod). These are three things at once: the integration test suite, the generator of `par_ticks`, and the ceiling baseline. Writing them is also how you discover which primitives are missing or awkward, before a model ever sees them.
 
+The API-interface helpers for the ablation (section 7.1) are built here too, and are mostly borrowed: the engine's `request_path` for `walk_to`, `find_entities_filtered` for `find_nearest`, and FLE's `connect_entities` Lua for belt routing. The hands-only solvers get no such help.
+
 ### Milestone 3 — Task system and packaging
 
-YAML task loader, the full ladder with inventory variants, the `verifiers` `MultiTurnEnv` wrapper (system prompt, action parsing, observation formatting, reward), and docker-compose for N parallel servers. Measure throughput: episodes per hour per server, tokens per episode. The goal is for the *model*, not the game, to be the bottleneck.
+YAML task loader, the full ladder with inventory variants, the `verifiers` v1 adapter (a `Taskset` that loads the YAML, and an `Env.run` loop that handles system prompt, action parsing, observation formatting, and reward), and docker-compose for N parallel servers. Scaffold with `vf-init`, install editable; use the built-in `null` harness and the `subprocess` runtime. Measure throughput: episodes per hour per server, tokens per episode. The goal is for the *model*, not the game, to be the bottleneck.
 
-Exit criteria: `vf-eval` runs the whole ladder against an API model end-to-end with one command.
+Exit criteria: one `vf-eval` command runs the whole ladder against an API model end-to-end and writes `traces.jsonl`.
 
 ### Milestone 4 — Evaluation and the first post
 
@@ -285,14 +313,14 @@ Run the **interface ablation** (section 7.1). Publish v0.1 and the first writeup
 
 ### Milestone 5 — RL fine-tune
 
-Train a ~4–8B open model with `prime-rl` or `vf.RLTrainer` on rented GPUs, using the curriculum in section 7.2. Track success per rung, the reward curve, invalid-action rate, and tokens per episode. Re-run the reward-hack audit on the trained model's trajectories; a model that improved suspiciously fast has usually found something.
+Train a ~4–8B open model with `prime-rl` on rented GPUs, using the curriculum in section 7.2, which is a `prime-rl` sampler config rather than code. Rough sizing from `prime-rl`'s shipped examples: a 4B LoRA run needs 2 to 4 H100s once sequence length is set for 40-turn episodes; an 8B full fine-tune needs about 8. Measure before trusting this. Track success per rung, the reward curve, invalid-action rate, and tokens per episode. Re-run the reward-hack audit on the trained model's trajectories; a model that improved suspiciously fast has usually found something.
 
 Deliverables: the before/after table on the full ladder, the reward curve, one before/after replay pair, and the cost (GPU-hours, episodes, dollars). Second writeup.
 
 ### Milestone 6 — Stretch, in order of value
 
 1. **Replay renderer**: feed an episode's action list to a real Factorio client and record it. This is where the footage comes from.
-2. **Publish to the Environments Hub** so others can eval and train on it.
+2. **Publish to the Environments Hub** so others can eval and train on it. Hub packages are not auto-installed since `verifiers` 0.3.1; users install first, then run.
 3. **Rendered-image observation mode** for vision-language models: same actions, screenshot instead of JSON.
 4. **Pixels + mouse/keyboard mode**: true human parity. A separate project in cost and effort, but the action-space design makes it a mode, not a rewrite.
 
@@ -306,10 +334,10 @@ Deliverables: the before/after table on the full ladder, the reward curve, one b
 |---|---|
 | Random valid-action policy | The floor. Also a reward-hack detector: if random scores above 0 on anything, the task is broken. |
 | Scripted solver per task | The ceiling and the source of `par_ticks`. |
-| Frontier LLMs, hands interface | The headline leaderboard. |
+| Frontier LLMs, hands interface | The headline leaderboard. Every model goes through OpenRouter's single OpenAI-compatible endpoint, which reports cost per response, so cost per episode comes straight from the traces. vLLM serves only our own checkpoints. |
 | Same LLMs, **API interface** | Expose FLE-style helpers (`walk_to` with pathfinding, `connect_belts`, `find_nearest`) as extra tools on the *same* tasks. The gap between this row and the one above is the thesis. |
 | Small open model, before vs after RL | The proof that the environment is a usable training signal. |
-| You, through the text interface, and through the normal client | A human number on the board. Cheap, fun, and it calibrates how hard the text interface itself is. |
+| You, through the text interface, and through the normal client | A human number on the board. Cheap, fun, and it calibrates how hard the text interface itself is. The text version is a small terminal loop over the Python client that writes the same trace format as the models. |
 
 ### 7.2 Curriculum
 
@@ -321,11 +349,13 @@ GRPO needs within-group variance (section 2.2). Keep each task the model trains 
 - Inventory variants are the fine adjustment: `-kit` → `-ore-only` → `-empty` moves a task up the ladder without changing its target.
 - Always keep a held-out eval set (fixed seeds, never trained on) so the reported numbers are honest.
 
+`prime-rl`'s difficulty-pool sampler implements this: it tracks each task's latest mean group reward and assigns tasks to named pools with a threshold and a sampling weight. The thresholds are on *reward*, not success rate. Under the reward in section 5.4 a success scores above 0.5, so the 20–80% success band maps to mean-reward thresholds of roughly 0.1 and 0.6. Calibrate once on real runs.
+
 ### 7.3 Cost model (fill in with measured numbers)
 
 Rough shape, to be replaced with real measurements from milestone 3:
 
-- Observation ~1.2k tokens × ~40 turns ≈ 50k input tokens per episode, plus the model's output.
+- Observation ~1.2k tokens × ~40 turns ≈ 50k input tokens per episode, plus the model's output. That means a 32k-plus sequence length per episode at training time, which drives GPU count more than model size does.
 - G=8 episodes per task × T tasks per training step.
 - Game side: N headless servers per CPU box, each running many times faster than real time; usually not the bottleneck.
 - The lever that matters most is observation size. A 30% cut in observation tokens is a 30% cut in the whole bill.
@@ -361,4 +391,5 @@ The audience is tech Twitter and people who hire. The goal is that someone skimm
 - **pass@k**: probability that at least one of k sampled attempts succeeds.
 - **RCON**: Factorio's remote console protocol; how Python talks to the server.
 - **Headless**: a server with no renderer; what training runs on.
-- **`verifiers`**: the Python library that defines the environment interface the trainer and evaluator expect.
+- **`verifiers`**: the Python library that defines the environment interface the trainer and evaluator expect. Its v1 vocabulary: a **Taskset** loads **Tasks**; an **Env** runs the turn loop; a **harness** is the agent's chat loop; a **runtime** is where the harness executes; a **trace** is the saved record of one episode.
+- **`prime-rl`**: the trainer that samples from a `verifiers` environment and runs GRPO.
