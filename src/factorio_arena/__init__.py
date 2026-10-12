@@ -5,4 +5,8 @@ craft, ...) implemented by a Lua mod inside a headless server. See
 PLAN.md for the design and REUSE.md for the tooling it builds on.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+# pyproject.toml is the single source of the version; read it from the
+# installed package metadata so the two can never drift apart.
+__version__ = version("factorio-arena")
