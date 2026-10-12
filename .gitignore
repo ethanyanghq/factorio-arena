@@ -16,7 +16,6 @@ build/
 !.env.example
 .envrc
 docker/config/rconpw
-docker/config/server-settings.json
 
 # Factorio server data (bind-mounted volumes) and downloaded mods
 docker/data/

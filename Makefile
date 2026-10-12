@@ -31,10 +31,11 @@ test-server:
 	uv run pytest -m server
 
 server:
-	docker compose -f docker/compose.yml up -d --wait
+	scripts/write-rconpw.sh
+	docker compose --env-file .env -f docker/compose.yml up -d --wait
 
 stop:
-	docker compose -f docker/compose.yml down
+	docker compose --env-file .env -f docker/compose.yml down
 
 eval:
 	uv run vf-eval factorio-arena $(ARGS)

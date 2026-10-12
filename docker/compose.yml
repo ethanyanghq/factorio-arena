@@ -1,0 +1,36 @@
+# One headless Factorio server for local development (PLAN.md §3, REUSE.md §1).
+# Start with `make server`; it needs `.env` (copy .env.example) for the RCON password and port.
+services:
+  factorio:
+    image: factoriotools/factorio:2.0.77
+    # There is no arm64 Factorio binary. On Apple Silicon this runs the x86 build under
+    # Rosetta (enable it in Docker Desktop > General) or QEMU. Dev only; take numbers on x86.
+    platform: linux/amd64
+    ports:
+      - "${FACTORIO_RCON_PORT:?set it in .env}:27015/tcp"
+    environment:
+      # Base game only; Space Age changes recipes and would invalidate game_data.json.
+      DLC_SPACE_AGE: "false"
+      # A fresh map on first start; later milestones load scenarios instead.
+      GENERATE_NEW_SAVE: "true"
+      LOAD_LATEST_SAVE: "false"
+      SAVE_NAME: lab
+    volumes:
+      - ./config:/factorio/config
+      - ./data/saves:/factorio/saves
+      - ./data/mods:/factorio/mods
+      - ./data/scenarios:/factorio/scenarios
+    # The update loop is single-threaded, so one core per server is the budget (REUSE.md §1).
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1g
+    # `make server` uses `--wait`, which needs a healthcheck. The image has no nc, so bash's
+    # built-in /dev/tcp opens the RCON port instead.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/27015"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 30s
