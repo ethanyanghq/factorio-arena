@@ -278,10 +278,10 @@ Checklist:
 - [x] Headless server starts in Docker on the Mac (box64 or Rosetta) with `auto_pause: false`; RCON hello-world from Python. (2026-10-14: `make server`, hand-written `rcon.py`, `make test-server`.)
 - [x] Unattached character walks, stops when told, and stalls on collision. (2026-10-14: `scripts/probe_walk.py`. Walking persists across ticks from one `walking_state` call; no per-tick re-assertion needed.)
 - [x] Unattached character mines via `mining_state` (or the fallback). (2026-10-14: `scripts/probe_mine.py`. `mining_state` does nothing on an unattached character, even re-asserted every tick; use `LuaEntity.mine` and charge `mining_time / mining_speed` ticks in the mod. The fallback ignores reach, so the mod checks `can_reach_entity` itself.)
-- [ ] Unattached character crafts via `begin_crafting`; `crafting_queue` advances with ticks.
-- [ ] Reach attributes return real values on the unattached character.
-- [ ] `tick_paused` + `ticks_to_run` step the world exactly N ticks.
-- [ ] An observation over 8 KB round-trips over RCON intact.
+- [x] Unattached character crafts via `begin_crafting`; `crafting_queue` advances with ticks. (2026-10-14: `scripts/probe_craft.py`. Engine-driven, unlike mining: 3 gears appear on schedule, ingredients are consumed up front, and a craft without ingredients queues 0.)
+- [x] Reach attributes return real values on the unattached character. (2026-10-14: `scripts/probe_ticks.py`. reach 10, build 10, resource reach 2.7, item pickup 1, drop 10.)
+- [x] `tick_paused` + `ticks_to_run` step the world exactly N ticks. (2026-10-14: `scripts/probe_ticks.py`. Frozen clock holds; +60 is exactly +60 and re-pauses; walking moves only during the step. `ticks_to_run` runs at normal speed in the background, so the client must poll `game.tick` to know the step finished.)
+- [x] An observation over 8 KB round-trips over RCON intact. (2026-10-14: 9000-byte reply, single packet, hand-written client.)
 - [ ] `factorio --dump-data` produces a versioned `game_data.json` (recipes, mining times, crafting speeds, character fields); commit it.
 - [ ] Ticks per second at cranked `game.speed`, servers per core, and a determinism checksum of the same `(seed, action_list)` on the Mac versus an x86 box. These numbers drive the cost model later.
 
