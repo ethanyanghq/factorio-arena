@@ -282,7 +282,7 @@ Checklist:
 - [x] Reach attributes return real values on the unattached character. (2026-10-14: `scripts/probe_ticks.py`. reach 10, build 10, resource reach 2.7, item pickup 1, drop 10.)
 - [x] `tick_paused` + `ticks_to_run` step the world exactly N ticks. (2026-10-14: `scripts/probe_ticks.py`. Frozen clock holds; +60 is exactly +60 and re-pauses; walking moves only during the step. `ticks_to_run` runs at normal speed in the background, so the client must poll `game.tick` to know the step finished.)
 - [x] An observation over 8 KB round-trips over RCON intact. (2026-10-14: 9000-byte reply, single packet, hand-written client.)
-- [ ] `factorio --dump-data` produces a versioned `game_data.json` (recipes, mining times, crafting speeds, character fields); commit it.
+- [ ] `factorio --dump-data` produces a versioned `game_data.json` (recipes, mining times, crafting speeds, character fields); commit it. (2026-10-14: raw dump works via `make dump-data` (13 MB, base game only, gitignored). Still to do: a Python script that extracts the subset into a small committed `game_data.json` tagged with the game version. Note `energy_required` is absent from recipes that use the 0.5 s default, so the extractor must apply defaults.)
 - [ ] Ticks per second at cranked `game.speed`, servers per core, and a determinism checksum of the same `(seed, action_list)` on the Mac versus an x86 box. These numbers drive the cost model later.
 
 ### Milestone 1 — The "hands" mod
