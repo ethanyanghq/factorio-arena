@@ -13,36 +13,13 @@ mod needs an on_tick handler that re-asserts walking every tick.
 Each step prints what it expected and what it saw. Read the numbers, not the code.
 """
 
-import json
-import os
-import time
+from probe_lib import RconClient, connect, lua, lua_json, report, wait_ticks
 
-from factorio_arena.rcon import RconClient
-
-HOST = "127.0.0.1"
-PORT = 27015
-TICKS_PER_SECOND = 60
 WALK_TICKS = 60
 # Character running speed in the base game, from the character prototype.
 EXPECTED_TILES_PER_TICK = 0.15
 # A stone wall placed this many tiles east of the character's start.
 WALL_OFFSET_TILES = 3
-
-
-def lua(client: RconClient, code: str) -> str:
-    """Run Lua on the server and return what rcon.print produced."""
-    return client.command("/sc " + " ".join(code.split()))
-
-
-def lua_json(client: RconClient, code: str) -> dict:
-    """Run Lua that ends by printing a table as JSON, and parse it."""
-    return json.loads(lua(client, code))
-
-
-def arm_lua_console(client: RconClient) -> None:
-    """The first Lua command on a fresh server only prints an achievements warning and
-    asks you to repeat it. Send a throwaway command so the real ones go through."""
-    lua(client, "rcon.print('armed')")
 
 
 def spawn_character(client: RconClient) -> dict:
@@ -113,29 +90,9 @@ def remove_character(client: RconClient) -> None:
     lua(client, "if probe_char and probe_char.valid then probe_char.destroy() end probe_char = nil")
 
 
-def wait_ticks(client: RconClient, start_tick: int, ticks: int) -> int:
-    """Sleep until the game clock has advanced at least `ticks` past start_tick.
-    Returns the tick it actually reached."""
-    deadline = time.time() + 10 * ticks / TICKS_PER_SECOND
-    while time.time() < deadline:
-        now = read_state(client)["tick"]
-        if now >= start_tick + ticks:
-            return now
-        time.sleep(0.05)
-    raise TimeoutError(f"game clock did not advance {ticks} ticks; is the server paused?")
-
-
-def report(label: str, expected: str, observed: str) -> None:
-    print(f"{label}\n    expected: {expected}\n    observed: {observed}")
-
-
 def main() -> None:
-    password = os.environ.get("FACTORIO_RCON_PASSWORD")
-    if not password:
-        raise SystemExit("set FACTORIO_RCON_PASSWORD to the value in .env")
-    client = RconClient(HOST, PORT, password)
+    client = connect()
     try:
-        arm_lua_console(client)
         remove_character(client)
         start = spawn_character(client)
         print(f"spawned character at ({start['x']:.2f}, {start['y']:.2f}) on tick {start['tick']}")
