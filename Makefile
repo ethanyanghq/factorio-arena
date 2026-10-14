@@ -1,7 +1,7 @@
 # Project commands. AGENTS.md says to run `make lint` and `make test` before every commit.
 # `make check` runs exactly what the pre-commit hook runs, over every tracked file.
 
-.PHONY: setup lint format check typecheck test test-server server stop eval typedefs
+.PHONY: setup lint format check typecheck test test-server server stop dump-data eval typedefs
 
 setup:
 	uv sync --all-groups
@@ -36,6 +36,17 @@ server:
 
 stop:
 	docker compose --env-file .env -f docker/compose.yml down
+
+# Dump data.raw (every prototype: recipes, resources, character) as JSON to
+# docker/data/dump/data-raw-dump.json. Runs in a throwaway container because the live
+# server holds Factorio's lock. Reuses the server's mod-list so Space Age stays off.
+dump-data:
+	mkdir -p docker/data/dump
+	docker run --rm --platform linux/amd64 \
+		--entrypoint /opt/factorio/bin/x64/factorio \
+		-v "$(CURDIR)/docker/data/dump:/opt/factorio/script-output" \
+		-v "$(CURDIR)/docker/data/mods:/factorio/mods" \
+		factoriotools/factorio:2.0.77 --mod-directory /factorio/mods --dump-data
 
 eval:
 	uv run vf-eval factorio-arena $(ARGS)
