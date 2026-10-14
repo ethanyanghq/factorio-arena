@@ -277,7 +277,7 @@ Checklist:
 
 - [x] Headless server starts in Docker on the Mac (box64 or Rosetta) with `auto_pause: false`; RCON hello-world from Python. (2026-10-14: `make server`, hand-written `rcon.py`, `make test-server`.)
 - [x] Unattached character walks, stops when told, and stalls on collision. (2026-10-14: `scripts/probe_walk.py`. Walking persists across ticks from one `walking_state` call; no per-tick re-assertion needed.)
-- [ ] Unattached character mines via `mining_state` (or the fallback).
+- [x] Unattached character mines via `mining_state` (or the fallback). (2026-10-14: `scripts/probe_mine.py`. `mining_state` does nothing on an unattached character, even re-asserted every tick; use `LuaEntity.mine` and charge `mining_time / mining_speed` ticks in the mod. The fallback ignores reach, so the mod checks `can_reach_entity` itself.)
 - [ ] Unattached character crafts via `begin_crafting`; `crafting_queue` advances with ticks.
 - [ ] Reach attributes return real values on the unattached character.
 - [ ] `tick_paused` + `ticks_to_run` step the world exactly N ticks.
