@@ -6,6 +6,8 @@ Each test is one behavior, named for it. A method still raising NotImplementedEr
 shows as a failure with that name, which is the TODO list. Fix the method, rerun.
 """
 
+import os
+
 import pytest
 
 from factorio_arena import rcon
@@ -154,3 +156,17 @@ def test_close_closes_the_socket(fake_server):
     client = RconClient("127.0.0.1", 27015, PASSWORD)
     client.close()
     assert fake_server.is_closed
+
+
+# ---- live server (opt-in: `make test-server`) ----------------------------------------
+
+
+@pytest.mark.server
+def test_version_round_trips_against_a_live_server():
+    password = os.environ.get("FACTORIO_RCON_PASSWORD")
+    assert password, "set FACTORIO_RCON_PASSWORD to the value in .env before running"
+    client = RconClient("127.0.0.1", 27015, password)
+    try:
+        assert client.command("/version").startswith("2.0")
+    finally:
+        client.close()
