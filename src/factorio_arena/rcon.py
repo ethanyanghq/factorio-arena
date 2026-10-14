@@ -22,6 +22,7 @@ glued together.
 
 import socket
 import struct
+from typing import Protocol
 
 LOGIN = 3
 COMMAND = 2
@@ -89,7 +90,13 @@ def parse_packet(payload: bytes) -> tuple[int, int, str]:
     return (decode_int(id_bytes), decode_int(type_bytes), body_bytes[:-2].decode())
 
 
-def recv_exactly(sock: socket.socket, n: int) -> bytes:
+class Receiver(Protocol):
+    """Anything with a socket-style recv: a real socket, or a fake one in tests."""
+
+    def recv(self, n: int, /) -> bytes: ...
+
+
+def recv_exactly(sock: Receiver, n: int) -> bytes:
     """Return exactly n bytes read from sock, as one bytes object.
 
     sock.recv(k) returns up to k bytes, or b"" once the connection has closed. Loop until
