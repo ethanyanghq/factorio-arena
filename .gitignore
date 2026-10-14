@@ -41,3 +41,8 @@ checkpoints/
 .idea/
 .vscode/
 .zed/
+docker/config/map-gen-settings.json
+docker/config/map-settings.json
+
+# throwaway practice files
+scratch/
