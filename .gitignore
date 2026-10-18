@@ -16,7 +16,6 @@ build/
 !.env.example
 .envrc
 docker/config/rconpw
-docker/config/server-settings.json
 
 # Factorio server data (bind-mounted volumes) and downloaded mods
 docker/data/
@@ -42,3 +41,8 @@ checkpoints/
 .idea/
 .vscode/
 .zed/
+docker/config/map-gen-settings.json
+docker/config/map-settings.json
+
+# throwaway practice files
+scratch/
